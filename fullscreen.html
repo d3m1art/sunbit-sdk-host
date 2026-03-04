@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sunbit Fullscreen Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { 
+      width: 100vw; 
+      height: 100vh; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      overflow: hidden;
+    }
+    #payment-path-container { 
+      width: 100vw; 
+      height: 100vh;
+      min-width: 100vw;
+      min-height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: #fff;
+    }
+    #status {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 24px 48px;
+      text-align: center;
+      color: #666;
+      font-size: 18px;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      z-index: 1000;
+    }
+    #status.error { color: #c00; }
+    #status.success { color: #090; }
+    #status.hidden { display: none; }
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid #ccc;
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 12px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    #debug-panel {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      color: #0f0;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 10px;
+      border-radius: 4px;
+      max-width: 400px;
+      max-height: 200px;
+      overflow-y: auto;
+      z-index: 9999;
+    }
+    #debug-panel div {
+      margin-bottom: 4px;
+    }
+    #token-input {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 9999;
+      background: #fff;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+    #token-input input {
+      width: 300px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    #token-input button {
+      margin-left: 8px;
+      padding: 8px 16px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    #token-input button:hover {
+      background: #0056b3;
+    }
+    #size-info {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 10px 15px;
+      border-radius: 4px;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div id="status"><span class="spinner"></span>Loading Sunbit SDK...</div>
+  <div id="payment-path-container"></div>
+  
+  <div id="token-input">
+    <input type="text" id="token" placeholder="Paste token here...">
+    <button onclick="startWithToken()">Initialize SDK</button>
+    <button onclick="fetchAndStart()">Auto-fetch Token</button>
+  </div>
+  
+  <div id="size-info"></div>
+  <div id="debug-panel"></div>
+
+  <script>
+    var SUNBIT_KEY = 'x4d6ISJuu1xxhfoSAxnoKUwN2fWbE4R1';
+    var SUNBIT_SECRET = 'ysPmuJBHiacFFdlKeygR66MItBaeRBwY';
+    var LOCATION_ID = 'dabd436b-e0e1-441c-9f6a-ec30a21e32ba';
+    
+    var config = null;
+    var paymentPathModule = null;
+    var statusElement = document.getElementById('status');
+    var debugPanel = document.getElementById('debug-panel');
+    var sizeInfo = document.getElementById('size-info');
+    var sdkReady = false;
+
+    function updateSizeInfo() {
+      var container = document.getElementById('payment-path-container');
+      var info = 'Window: ' + window.innerWidth + 'x' + window.innerHeight + 
+                 ' | Container: ' + container.offsetWidth + 'x' + container.offsetHeight;
+      sizeInfo.textContent = info;
+    }
+    
+    updateSizeInfo();
+    window.addEventListener('resize', updateSizeInfo);
+
+    function debug(msg) {
+      var div = document.createElement('div');
+      div.textContent = new Date().toLocaleTimeString() + ': ' + msg;
+      debugPanel.insertBefore(div, debugPanel.firstChild);
+      console.log('[Sunbit]', msg);
+    }
+
+    function showStatus(message, type) {
+      statusElement.className = type || '';
+      statusElement.innerHTML = (type !== 'error' && type !== 'success' ? '<span class="spinner"></span>' : '') + message;
+    }
+
+    function hideStatus() {
+      statusElement.className = 'hidden';
+    }
+
+    function showError(message) {
+      showStatus(message, 'error');
+      debug('ERROR: ' + message);
+    }
+
+    async function fetchToken() {
+      debug('Fetching token from api-demo.sunbit.com...');
+      var response = await fetch('https://api-demo.sunbit.com/alliance/api/v1/merchant-authentication', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'sunbit-key': SUNBIT_KEY,
+          'sunbit-secret': SUNBIT_SECRET
+        },
+        body: JSON.stringify({ location: LOCATION_ID })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Token fetch failed: ' + response.status);
+      }
+      
+      var data = await response.json();
+      debug('Token received, length: ' + data.token.length);
+      return data.token;
+    }
+
+    async function fetchAndStart() {
+      try {
+        var token = await fetchToken();
+        document.getElementById('token').value = token;
+        startWithToken();
+      } catch (e) {
+        showError('Failed to fetch token: ' + e.message);
+      }
+    }
+
+    function startWithToken() {
+      var token = document.getElementById('token').value.trim();
+      if (!token) {
+        alert('Please enter a token or click Auto-fetch');
+        return;
+      }
+      
+      document.getElementById('token-input').style.display = 'none';
+      initializePaymentPath(token);
+    }
+
+    function initializePaymentPath(token) {
+      if (!sdkReady) {
+        showError('SDK not ready yet');
+        return;
+      }
+
+      var referenceId = 'fullscreen-test-' + Date.now();
+      var orderId = 'order-' + Date.now();
+      
+      debug('Initializing with referenceId: ' + referenceId);
+      debug('Container size: ' + document.getElementById('payment-path-container').offsetWidth + 'x' + document.getElementById('payment-path-container').offsetHeight);
+      
+      showStatus('Initializing payment form...');
+
+      SUNBIT.PaymentPathModule.then(function(paymentPath) {
+        paymentPathModule = paymentPath;
+        debug('PaymentPathModule promise resolved');
+
+        paymentPath.init('#payment-path-container', {
+          token: token,
+          referenceId: referenceId,
+          totalAmount: 150.00,
+          orderId: orderId,
+          customerDetails: {},
+          representativeDetails: {
+            email: 'merchant@payjunction.com'
+          },
+          onLoaded: function() {
+            debug('onLoaded callback fired!');
+            hideStatus();
+            updateSizeInfo();
+            
+            setTimeout(function() {
+              var container = document.getElementById('payment-path-container');
+              debug('Container children: ' + container.children.length);
+              debug('Container innerHTML length: ' + container.innerHTML.length);
+              
+              var iframes = container.querySelectorAll('iframe');
+              debug('Iframes found: ' + iframes.length);
+              
+              iframes.forEach(function(iframe, i) {
+                debug('Iframe ' + i + ': ' + iframe.offsetWidth + 'x' + iframe.offsetHeight + ' src=' + (iframe.src || 'none').substring(0, 50));
+              });
+            }, 1000);
+          },
+          onLinkSent: function() {
+            debug('onLinkSent callback fired');
+          },
+          onTokenExpired: function() {
+            debug('onTokenExpired callback fired');
+          }
+        });
+
+        debug('paymentPath.init() called');
+      }).catch(function(error) {
+        showError('Failed to initialize: ' + error.message);
+      });
+    }
+
+    window.sunbitAsyncInit = function() {
+      debug('sunbitAsyncInit called');
+
+      SUNBIT.init({
+        sunbitKey: SUNBIT_KEY,
+        enablePaymentPath: true,
+        mode: 'DEMO'
+      });
+
+      debug('SUNBIT.init() completed');
+      sdkReady = true;
+      showStatus('SDK ready. Enter token or click Auto-fetch.', 'success');
+    };
+  </script>
+  <script async defer src="https://static.sunbit.com/sdk/sunbit-sdk.js"></script>
+</body>
+</html>
