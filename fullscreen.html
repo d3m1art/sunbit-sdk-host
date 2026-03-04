@@ -105,7 +105,8 @@
         log('Initializing Payment Path', {
           referenceId: config.referenceId,
           orderId: config.orderId,
-          totalAmount: config.totalAmount
+          totalAmount: config.totalAmount,
+          customerDetails: config.customerDetails
         });
 
         showStatus('Initializing payment form...');
@@ -114,7 +115,7 @@
           paymentPathModule = paymentPath;
           log('PaymentPathModule ready');
 
-          paymentPath.init('#payment-path-container', {
+          var initConfig = {
             token: config.token,
             referenceId: config.referenceId,
             totalAmount: config.totalAmount,
@@ -127,6 +128,17 @@
               log('onLoaded callback fired');
               hideStatus();
               sendMessage('loaded', {});
+              
+              setTimeout(function() {
+                var container = document.getElementById('payment-path-container');
+                log('Container check - children: ' + container.children.length);
+                log('Container innerHTML length: ' + container.innerHTML.length);
+                var iframes = container.querySelectorAll('iframe');
+                log('Iframes in container: ' + iframes.length);
+                iframes.forEach(function(iframe, i) {
+                  log('Iframe ' + i + ' size: ' + iframe.offsetWidth + 'x' + iframe.offsetHeight);
+                });
+              }, 500);
             },
             onLinkSent: function() {
               log('onLinkSent callback fired');
@@ -136,11 +148,15 @@
               log('onTokenExpired callback fired');
               sendMessage('tokenExpired', {});
             }
-          });
+          };
+
+          log('Calling paymentPath.init with config', JSON.stringify(initConfig, null, 2));
+          paymentPath.init('#payment-path-container', initConfig);
 
           sendMessage('initialized', {});
         }).catch(function(error) {
           showError('Failed to initialize: ' + error.message);
+          log('PaymentPathModule error', error);
         });
       }
 
