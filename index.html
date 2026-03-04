@@ -130,15 +130,29 @@
 
       window.addEventListener('message', function(event) {
         var data = event.data;
+        
+        // Log ALL messages for debugging
+        if (data && typeof data === 'object') {
+          console.log('[SunbitSDK] Raw message received:', data.source, data.type, data);
+        }
+        
         if (!data || data.source !== 'sunbit-extension') return;
 
-        log('Received message: ' + data.type);
+        log('Received message from extension: ' + data.type);
+        log('Payload keys: ' + (data.payload ? Object.keys(data.payload).join(', ') : 'none'));
+        
+        if (data.payload && data.payload.token) {
+          log('Token received, length: ' + data.payload.token.length);
+        }
 
         switch (data.type) {
           case 'init':
             config = data.payload;
+            log('Config stored, sdkReady=' + sdkReady);
             if (sdkReady) {
               initializePaymentPath();
+            } else {
+              log('SDK not ready yet, will init when ready');
             }
             break;
 
