@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sunbit Payment Path</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { 
+      width: 100%; 
+      height: 100%; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #fff;
+    }
+    #payment-path-container { 
+      width: 100%; 
+      min-height: 100%;
+    }
+    #status {
+      padding: 24px;
+      text-align: center;
+      color: #666;
+      font-size: 16px;
+    }
+    #status.error {
+      color: #c00;
+    }
+    #status.success {
+      color: #090;
+    }
+    .spinner {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #ccc;
+      border-top-color: #333;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div id="status"><span class="spinner"></span>Loading Sunbit SDK...</div>
+  <div id="payment-path-container"></div>
+
+  <script>
+    (function() {
+      var SUNBIT_KEY = 'x4d6ISJuu1xxhfoSAxnoKUwN2fWbE4R1';
+      var config = null;
+      var paymentPathModule = null;
+      var statusElement = document.getElementById('status');
+      var sdkReady = false;
+
+      function sendMessage(type, payload) {
+        window.parent.postMessage({ source: 'sunbit-sdk', type: type, payload: payload || {} }, '*');
+      }
+
+      function log(message, data) {
+        console.log('[SunbitSDK] ' + message, data || '');
+        sendMessage('log', { message: message, data: data });
+      }
+
+      function showStatus(message, type) {
+        statusElement.className = type || '';
+        statusElement.innerHTML = (type !== 'error' && type !== 'success' ? '<span class="spinner"></span>' : '') + message;
+      }
+
+      function showError(message) {
+        showStatus(message, 'error');
+        sendMessage('error', { message: message });
+      }
+
+      function initializePaymentPath() {
+        if (!config) {
+          showError('No configuration received');
+          return;
+        }
+
+        if (!config.token) {
+          showError('No token provided');
+          return;
+        }
+
+        log('Initializing Payment Path', {
+          referenceId: config.referenceId,
+          orderId: config.orderId,
+          totalAmount: config.totalAmount
+        });
+
+        showStatus('Initializing payment form...');
+
+        SUNBIT.PaymentPathModule.then(function(paymentPath) {
+          paymentPathModule = paymentPath;
+          log('PaymentPathModule ready');
+
+          paymentPath.init('#payment-path-container', {
+            token: config.token,
+            referenceId: config.referenceId,
+            totalAmount: config.totalAmount,
+            orderId: config.orderId,
+            customerDetails: config.customerDetails || {},
+            representativeDetails: config.representativeDetails || {
+              email: 'merchant@payjunction.com'
+            },
+            onLoaded: function() {
+              log('onLoaded callback fired');
+              statusElement.style.display = 'none';
+              sendMessage('loaded', {});
+            },
+            onLinkSent: function() {
+              log('onLinkSent callback fired');
+              sendMessage('linkSent', {});
+            },
+            onTokenExpired: function() {
+              log('onTokenExpired callback fired');
+              sendMessage('tokenExpired', {});
+            }
+          });
+
+          sendMessage('initialized', {});
+        }).catch(function(error) {
+          showError('Failed to initialize: ' + error.message);
+        });
+      }
+
+      window.addEventListener('message', function(event) {
+        var data = event.data;
+        if (!data || data.source !== 'sunbit-extension') return;
+
+        log('Received message: ' + data.type);
+
+        switch (data.type) {
+          case 'init':
+            config = data.payload;
+            if (sdkReady) {
+              initializePaymentPath();
+            }
+            break;
+
+          case 'setToken':
+            if (paymentPathModule && data.payload && data.payload.token) {
+              paymentPathModule.setToken(data.payload.token);
+              log('Token updated');
+              sendMessage('tokenUpdated', {});
+            }
+            break;
+        }
+      });
+
+      window.sunbitAsyncInit = function() {
+        log('SDK loaded');
+
+        SUNBIT.init({
+          sunbitKey: SUNBIT_KEY,
+          enablePaymentPath: true,
+          mode: 'DEMO'
+        });
+
+        log('SUNBIT.init() completed');
+        sdkReady = true;
+        sendMessage('sdkReady', {});
+
+        if (config) {
+          initializePaymentPath();
+        } else {
+          showStatus('Waiting for configuration...');
+        }
+      };
+
+      sendMessage('pageReady', {});
+    })();
+  </script>
+  <script async defer src="https://static.sunbit.com/sdk/sunbit-sdk.js"></script>
+</body>
+</html>
