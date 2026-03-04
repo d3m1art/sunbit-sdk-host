@@ -64,11 +64,40 @@
       var paymentPathModule = null;
       var statusElement = document.getElementById('status');
       var sdkReady = false;
-      var opener = window.opener;
+      
+      // Store opener reference before nullifying
+      var openerWindow = window.opener;
+      
+      // Nullify opener to prevent SDK from detecting and closing the window
+      try {
+        Object.defineProperty(window, 'opener', { value: null, writable: false });
+      } catch(e) {
+        window.opener = null;
+      }
+      
+      // Parse config from URL hash (base64 encoded JSON)
+      function getConfigFromUrl() {
+        var hash = window.location.hash.substring(1);
+        if (hash) {
+          try {
+            return JSON.parse(decodeURIComponent(atob(hash)));
+          } catch(e) {
+            console.error('Failed to parse config from URL', e);
+          }
+        }
+        return null;
+      }
+      
+      // Try to get config from URL first
+      config = getConfigFromUrl();
 
       function sendMessage(type, payload) {
-        if (opener) {
-          opener.postMessage({ source: 'sunbit-sdk', type: type, payload: payload || {} }, '*');
+        if (openerWindow) {
+          try {
+            openerWindow.postMessage({ source: 'sunbit-sdk', type: type, payload: payload || {} }, '*');
+          } catch(e) {
+            console.log('Could not send message to opener', e);
+          }
         }
       }
 
