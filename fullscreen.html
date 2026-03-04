@@ -14,105 +14,129 @@
     }
     #payment-path-container { 
       width: 100%; 
-      height: 100%;
+      min-height: 100%;
     }
     #status {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      padding: 24px 48px;
+      padding: 24px;
       text-align: center;
       color: #666;
-      font-size: 18px;
+      font-size: 16px;
     }
     #status.error { color: #c00; }
     #status.hidden { display: none; }
-    .spinner {
-      display: inline-block;
-      width: 24px;
-      height: 24px;
-      border: 3px solid #ccc;
-      border-top-color: #333;
-      border-radius: 50%;
-      animation: spin 1s linear infinite;
-      margin-right: 12px;
-      vertical-align: middle;
+    #send-link-btn {
+      display: none;
+      margin: 20px auto;
+      padding: 15px 30px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 18px;
+      cursor: pointer;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    #send-link-btn:hover {
+      background: #0056b3;
+    }
+    #send-link-btn.visible {
+      display: block;
     }
   </style>
 </head>
 <body>
-  <div id="status"><span class="spinner"></span>Loading Sunbit SDK...</div>
+  <div id="status">Loading Sunbit SDK...</div>
+  <button id="send-link-btn">Send Payment Link to Customer</button>
   <div id="payment-path-container"></div>
 
   <script>
-    (function() {
-      var SUNBIT_KEY = 'x4d6ISJuu1xxhfoSAxnoKUwN2fWbE4R1';
-      var statusElement = document.getElementById('status');
+    var SUNBIT_KEY = 'x4d6ISJuu1xxhfoSAxnoKUwN2fWbE4R1';
+    var statusElement = document.getElementById('status');
+    var sendLinkBtn = document.getElementById('send-link-btn');
 
-      function getConfigFromUrl() {
-        var hash = window.location.hash.substring(1);
-        if (hash) {
-          try {
-            return JSON.parse(decodeURIComponent(atob(hash)));
-          } catch(e) {
-            console.error('Failed to parse config from URL', e);
+    function getConfigFromUrl() {
+      var hash = window.location.hash.substring(1);
+      if (hash) {
+        try {
+          return JSON.parse(decodeURIComponent(atob(hash)));
+        } catch(e) {
+          console.error('Failed to parse config from URL', e);
+        }
+      }
+      return null;
+    }
+
+    function showStatus(message, isError) {
+      statusElement.className = isError ? 'error' : '';
+      statusElement.textContent = message;
+    }
+
+    function hideStatus() {
+      statusElement.className = 'hidden';
+    }
+
+    var config = getConfigFromUrl();
+
+    window.sunbitAsyncInit = function() {
+      console.log('[Sunbit] SDK loaded');
+      
+      SUNBIT.init({
+        sunbitKey: SUNBIT_KEY,
+        enablePaymentPath: true,
+        mode: 'DEMO'
+      });
+
+      if (!config || !config.token) {
+        showStatus('No configuration provided', true);
+        return;
+      }
+
+      showStatus('Initializing...');
+
+      SUNBIT.PaymentPathModule.then(function(module) {
+        var paymentPath = module.init || module;
+        var bindButton = module.bindButton;
+        
+        console.log('[Sunbit] PaymentPathModule:', module);
+        console.log('[Sunbit] Available methods:', Object.keys(module));
+
+        // Try standard init with container
+        paymentPath('#payment-path-container', {
+          token: config.token,
+          referenceId: config.referenceId,
+          totalAmount: config.totalAmount,
+          orderId: config.orderId,
+          customerDetails: config.customerDetails || {},
+          representativeDetails: config.representativeDetails || { email: 'merchant@payjunction.com' },
+          onLoaded: function() {
+            console.log('[Sunbit] onLoaded');
+            hideStatus();
+            
+            // Log what's in the container
+            var container = document.getElementById('payment-path-container');
+            console.log('[Sunbit] Container innerHTML:', container.innerHTML.substring(0, 500));
+            console.log('[Sunbit] Container children:', container.children.length);
+            
+            // Check for any iframes
+            var iframes = container.querySelectorAll('iframe');
+            console.log('[Sunbit] Iframes found:', iframes.length);
+            iframes.forEach(function(iframe, i) {
+              console.log('[Sunbit] Iframe', i, ':', iframe.src, iframe.offsetWidth, 'x', iframe.offsetHeight);
+            });
+          },
+          onLinkSent: function() {
+            console.log('[Sunbit] Link sent');
+            showStatus('Payment link sent to customer!', false);
+          },
+          onTokenExpired: function() {
+            console.log('[Sunbit] Token expired');
+            showStatus('Session expired. Please refresh.', true);
           }
-        }
-        return null;
-      }
-
-      function showStatus(message, isError) {
-        statusElement.className = isError ? 'error' : '';
-        statusElement.innerHTML = (isError ? '' : '<span class="spinner"></span>') + message;
-      }
-
-      function hideStatus() {
-        statusElement.className = 'hidden';
-      }
-
-      var config = getConfigFromUrl();
-
-      window.sunbitAsyncInit = function() {
-        SUNBIT.init({
-          sunbitKey: SUNBIT_KEY,
-          enablePaymentPath: true,
-          mode: 'DEMO'
         });
-
-        if (!config || !config.token) {
-          showStatus('No configuration provided', true);
-          return;
-        }
-
-        showStatus('Initializing...');
-
-        SUNBIT.PaymentPathModule.then(function(paymentPath) {
-          paymentPath.init('#payment-path-container', {
-            token: config.token,
-            referenceId: config.referenceId,
-            totalAmount: config.totalAmount,
-            orderId: config.orderId,
-            customerDetails: config.customerDetails || {},
-            representativeDetails: config.representativeDetails || { email: 'merchant@payjunction.com' },
-            onLoaded: function() {
-              hideStatus();
-            },
-            onLinkSent: function() {
-              console.log('Link sent');
-            },
-            onTokenExpired: function() {
-              console.log('Token expired');
-            }
-          });
-        }).catch(function(error) {
-          showStatus('Error: ' + error.message, true);
-        });
-      };
-    })();
+      }).catch(function(error) {
+        console.error('[Sunbit] Error:', error);
+        showStatus('Error: ' + error.message, true);
+      });
+    };
   </script>
   <script async defer src="https://static.sunbit.com/sdk/sunbit-sdk.js"></script>
 </body>
