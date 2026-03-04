@@ -158,7 +158,7 @@
         SUNBIT.init({
           sunbitKey: SUNBIT_KEY,
           enablePaymentPath: true,
-          mode: 'SANDBOX'
+          mode: 'DEMO'
         });
 
         log('SUNBIT.init() completed');
@@ -169,6 +169,23 @@
           initializePaymentPath();
         } else {
           showStatus('Waiting for configuration...');
+        }
+      };
+
+      // Test function for debugging - call from console: testInit()
+      window.testInit = function(token) {
+        config = {
+          token: token,
+          referenceId: 'test-ref-' + Date.now(),
+          orderId: 'test-order-' + Date.now(),
+          totalAmount: 100.00,
+          customerDetails: {},
+          representativeDetails: { email: 'test@payjunction.com' }
+        };
+        if (sdkReady) {
+          initializePaymentPath();
+        } else {
+          log('SDK not ready yet');
         }
       };
 
