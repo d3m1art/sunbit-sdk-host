@@ -97,13 +97,11 @@ body {
   display: none;
 }
 
-.payment-container {
-  width: 100%;
-  height: 100%;
-}
-
-.payment-container.hidden {
-  display: none;
+.sunbit-trigger {
+  position: fixed;
+  left: -9999px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 @media (max-width: 420px) {

@@ -3,19 +3,17 @@
 
   const statusWrapper = document.getElementById('status-wrapper');
   const statusMessage = document.getElementById('status-message');
-  const paymentContainer = document.getElementById('payment-path-container');
   const retryButton = document.getElementById('retry-button');
+  const triggerButton = document.getElementById('sunbit-trigger');
 
   const showStatus = (message, { isError = false, showRetry = false } = {}) => {
     statusWrapper.className = isError ? 'status-wrapper error' : 'status-wrapper';
     statusMessage.textContent = message;
     retryButton.className = showRetry ? 'retry-button' : 'retry-button hidden';
-    paymentContainer.className = 'payment-container hidden';
   };
 
   const hideStatus = () => {
     statusWrapper.className = 'status-wrapper hidden';
-    paymentContainer.className = 'payment-container';
   };
 
   const parseConfig = () => {
@@ -70,7 +68,6 @@
 
   const initializePaymentPath = (currentConfig) => {
     showStatus('Connecting to payment service...');
-    paymentContainer.innerHTML = '';
 
     const {
       sunbitKey = '',
@@ -89,8 +86,10 @@
       mode,
     });
 
-    SUNBIT.PaymentPathModule.then((paymentPath) => {
-      paymentPath.init('#payment-path-container', {
+    SUNBIT.PaymentPathModule.then((paymentPathModule) => {
+      const { init, bindButton } = paymentPathModule;
+
+      init(undefined, {
         token,
         referenceId: referenceId || `ref-${Date.now()}`,
         orderId: orderId || `order-${Date.now()}`,
@@ -98,8 +97,10 @@
         customerDetails,
         representativeDetails,
         onLoaded: () => {
+          bindButton('#sunbit-trigger');
           hideStatus();
           notifyExtension('sunbit-widget-loaded');
+          triggerButton.click();
         },
         onLinkSent: () => {
           notifyExtension('sunbit-link-sent');
@@ -115,7 +116,7 @@
             return;
           }
 
-          initializePaymentPath({ ...currentConfig, token: tokenResponse.token });
+          paymentPathModule.setToken(tokenResponse.token);
         },
       });
     }).catch((error) => {
