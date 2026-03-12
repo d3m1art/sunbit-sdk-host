@@ -1,84 +1,55 @@
-(() => {
-  const SDK_LOAD_TIMEOUT_MS = 5000;
+const triggerButton = document.getElementById('sunbit-trigger');
 
-  const statusWrapper = document.getElementById('status-wrapper');
-  const statusMessage = document.getElementById('status-message');
-  const retryButton = document.getElementById('retry-button');
-  const triggerButton = document.getElementById('sunbit-trigger');
+const parseConfig = () => {
+  const hash = window.location.hash.substring(1);
+  if (!hash) return null;
 
-  const showStatus = (message, { isError = false, showRetry = false } = {}) => {
-    statusWrapper.className = isError ? 'status-wrapper error' : 'status-wrapper';
-    statusMessage.textContent = message;
-    retryButton.className = showRetry ? 'retry-button' : 'retry-button hidden';
-  };
-
-  const hideStatus = () => {
-    statusWrapper.className = 'status-wrapper hidden';
-  };
-
-  const parseConfig = () => {
-    const hash = window.location.hash.substring(1);
-    if (!hash) return null;
-
-    try {
-      return JSON.parse(decodeURIComponent(atob(hash)));
-    } catch {
-      return null;
-    }
-  };
-
-  const config = parseConfig();
-
-  if (!config?.token) {
-    showStatus('Something went wrong. Please close and try again.', { isError: true });
-    return;
+  try {
+    return JSON.parse(decodeURIComponent(atob(hash)));
+  } catch {
+    return null;
   }
+};
 
-  const { extensionId = null } = config;
+const config = parseConfig();
+const extensionId = config?.extensionId;
 
-  const notifyExtension = (messageType, payload = null) => {
-    if (!extensionId || !chrome?.runtime?.sendMessage) return;
+const sendMessageToExtension = (messageType, payload = null) =>
+  new Promise((resolve) => {
+    if (!extensionId || !chrome?.runtime?.sendMessage) {
+      resolve(null);
+      return;
+    }
 
     chrome.runtime.sendMessage(
       extensionId,
       { type: messageType, payload },
-      () => void chrome.runtime.lastError
-    );
-  };
-
-  const requestNewToken = () =>
-    new Promise((resolve) => {
-      if (!extensionId || !chrome?.runtime?.sendMessage) {
-        resolve(null);
-        return;
-      }
-
-      chrome.runtime.sendMessage(
-        extensionId,
-        { type: 'sunbit-token-expired' },
-        (response) => {
-          if (chrome.runtime.lastError || !response?.success) {
-            resolve(null);
-            return;
-          }
-          resolve(response);
+      (response) => {
+        if (chrome.runtime.lastError) {
+          resolve(null);
+          return;
         }
-      );
-    });
+        resolve(response);
+      }
+    );
+  });
 
-  const initializePaymentPath = (currentConfig) => {
-    showStatus('Connecting to payment service...');
+const REQUIRED_CONFIG_FIELDS = ['token', 'referenceId', 'orderId', 'totalAmount', 'sunbitKey', 'mode'];
 
-    const {
-      sunbitKey = '',
-      mode = 'SANDBOX',
-      token,
-      referenceId,
-      orderId,
-      totalAmount = 150.0,
-      customerDetails = {},
-      representativeDetails = {},
-    } = currentConfig;
+const getMissingFields = () =>
+  REQUIRED_CONFIG_FIELDS.filter((field) => !config?.[field]);
+
+const missingFields = config ? getMissingFields() : REQUIRED_CONFIG_FIELDS;
+
+if (missingFields.length > 0) {
+  sendMessageToExtension('SUNBIT_ERROR', {
+    message: `Missing required config fields: ${missingFields.join(', ')}`,
+  });
+} else {
+  const { sunbitKey, mode, token, referenceId, orderId, totalAmount, customerDetails } = config;
+
+  window.sunbitAsyncInit = () => {
+    sendMessageToExtension('SUNBIT_SDK_LOADED');
 
     SUNBIT.init({
       sunbitKey,
@@ -91,28 +62,23 @@
 
       init(undefined, {
         token,
-        referenceId: referenceId || `ref-${Date.now()}`,
-        orderId: orderId || `order-${Date.now()}`,
+        referenceId,
+        orderId,
         totalAmount,
         customerDetails,
-        representativeDetails,
         onLoaded: () => {
           bindButton('#sunbit-trigger');
-          hideStatus();
-          notifyExtension('sunbit-widget-loaded');
+          sendMessageToExtension('SUNBIT_WIDGET_LOADED');
           triggerButton.click();
         },
         onLinkSent: () => {
-          notifyExtension('sunbit-link-sent');
+          sendMessageToExtension('SUNBIT_LINK_SENT');
         },
         onTokenExpired: async () => {
-          showStatus('Refreshing session...');
-          const tokenResponse = await requestNewToken();
+          const tokenResponse = await sendMessageToExtension('SUNBIT_TOKEN_EXPIRED');
 
-          if (!tokenResponse) {
-            showStatus('Your session has expired. Please close and reopen to continue.', {
-              isError: true,
-            });
+          if (!tokenResponse?.success) {
+            sendMessageToExtension('SUNBIT_ERROR', { message: 'Token refresh failed' });
             return;
           }
 
@@ -120,37 +86,7 @@
         },
       });
     }).catch((error) => {
-      showStatus('Something went wrong. Please try again.', { isError: true, showRetry: true });
-      notifyExtension('sunbit-error', { message: error.message });
+      sendMessageToExtension('SUNBIT_ERROR', { message: error.message });
     });
   };
-
-  retryButton.addEventListener('click', () => {
-    window.location.reload();
-  });
-
-  const startInitialization = () => {
-    if (typeof SUNBIT !== 'undefined') {
-      notifyExtension('sunbit-sdk-loaded');
-      initializePaymentPath(config);
-      return;
-    }
-
-    window.sunbitAsyncInit = () => {
-      notifyExtension('sunbit-sdk-loaded');
-      initializePaymentPath(config);
-    };
-
-    setTimeout(() => {
-      if (typeof SUNBIT === 'undefined') {
-        showStatus(
-          'Unable to connect to payment service. Please check your connection and try again.',
-          { isError: true, showRetry: true }
-        );
-        notifyExtension('sunbit-error', { message: 'SDK load timeout' });
-      }
-    }, SDK_LOAD_TIMEOUT_MS);
-  };
-
-  startInitialization();
-})();
+}
